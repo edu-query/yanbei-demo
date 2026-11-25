@@ -25,7 +25,7 @@
       <h2>登录</h2>
       <div class="sub" id="lgSub">库存 · 销售 · 采购价，实时同步到云端</div>
 
-      <!-- 云端登录：手机号验证码 / WorkBuddy 账号 -->
+      <!-- 云端登录：手机号验证码 -->
       <div id="cloudLogin" class="hidden">
         <div class="field">
           <label>手机号</label>
@@ -40,8 +40,6 @@
         </div>
         <div class="err" id="lgErr"></div>
         <button class="btn block" onclick="App.loginPhone()">登 录 / 注 册</button>
-        <div class="or-line"><span>或</span></div>
-        <button class="btn ghost block" onclick="App.loginWorkBuddy()">使用 WorkBuddy 登录</button>
         <div class="role-hint">
           首次登录自动建档：第一个登录的人是<b>老板</b>，之后加入的是<b>业务员</b>。<br>
           数据实时写入云端，换设备、换手机都能看到同一份账。

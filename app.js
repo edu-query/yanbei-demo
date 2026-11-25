@@ -183,11 +183,11 @@ const App = (function () {
     } catch (e) { updateBadge('error'); lgErr(e.message || '登录失败'); }
   }
 
-  async function loginWorkBuddy() {
+  async function loginSSO() {
     if (!CLOUD_MODE) { toast('演示模式不支持该登录方式'); return; }
     lgErr('');
-    try { await CLOUD.signInWithWorkBuddy(); }
-    catch (e) { lgErr(e.message || 'WorkBuddy 登录发起失败'); }
+    try { await CLOUD.signInWithSSO(); }
+    catch (e) { lgErr(e.message || '统一账号登录发起失败'); }
   }
 
   async function afterLogin() {
@@ -1296,7 +1296,7 @@ const App = (function () {
 
   return {
     init, logout, go, reset, loginDemo,
-    sendCode, loginPhone, loginWorkBuddy, clearErr,
+    sendCode, loginPhone, loginSSO, clearErr,
     doPrice, globalSearch, priceResult,
     fStock, fStockCat, fSale, fSaleDays, fCust, fInq, pickPur,
     custDetail, openModal, closeModal,
