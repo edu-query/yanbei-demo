@@ -39,62 +39,57 @@ const App = (function () {
   };
   const ROLE_LABEL = { owner: '老板 · 主账户', sales: '业务员', finance: '财务 · 只读' };
 
+  /* ---------------- 云服务 ---------------- */
+  const CLOUD = window.CloudStore || null;
+  const CLOUD_MODE = !!(CLOUD && CLOUD.ready);
+
   function payload() {
     return {
-      products: D.PRODUCTS, initStock: D.initStock, sales: D.sales, stockFlows: D.stockFlows,
-      quotes: D.quotes, inquiries: D.inquiries, customers: D.CUSTOMERS
+      PRODUCTS: D.PRODUCTS, SUPPLIERS: D.SUPPLIERS, CUSTOMERS: D.CUSTOMERS,
+      sales: D.sales, stockFlows: D.stockFlows, quotes: D.quotes,
+      inquiries: D.inquiries, initStock: D.initStock
     };
   }
-  function applyData(d) {
-    if (!d) return;
+
+  function applyCloud(d) {
     if (d.products && d.products.length) D.PRODUCTS = d.products;
-    if (d.initStock) D.initStock = d.initStock;
-    if (d.sales) D.sales = d.sales;
-    if (d.stockFlows) D.stockFlows = d.stockFlows;
-    if (d.quotes) D.quotes = d.quotes;
-    if (d.inquiries) D.inquiries = d.inquiries;
-    if (d.customers) D.CUSTOMERS = d.customers;
-  }
-
-  let pushTimer = null, pushing = false;
-
-  function save() {
-    try { localStorage.setItem(LS, JSON.stringify(payload())); } catch (e) { }
-    if (Cloud.enabled() && state.user) schedulePush();
-  }
-  function load() {
-    try { applyData(JSON.parse(localStorage.getItem(LS) || 'null')); } catch (e) { }
+    if (d.suppliers && d.suppliers.length) D.SUPPLIERS = d.suppliers;
+    if (d.customers && d.customers.length) D.CUSTOMERS = d.customers;
+    D.sales = d.sales || [];
+    D.stockFlows = d.stockFlows || [];
+    D.quotes = d.quotes || [];
+    D.inquiries = d.inquiries || [];
+    const base = {};
+    D.PRODUCTS.forEach(p => { base[p.id] = (d.initStock && d.initStock[p.id]) || { qty: 0, cost: 0 }; });
+    D.initStock = base;
     recomputeStock();
   }
 
-  /* 云端推送（防抖 900ms，避免连续编辑刷接口） */
-  function schedulePush() {
-    clearTimeout(pushTimer);
-    pushTimer = setTimeout(async () => {
-      if (pushing) { schedulePush(); return; }
-      pushing = true;
-      updateBadge('syncing');
-      try {
-        await Cloud.push(payload());
-        updateBadge('online');
-      } catch (e) {
-        updateBadge(e.code === 409 ? 'conflict' : 'error');
-        toast(e.code === 409 ? '数据已被其他人修改，请刷新页面后重试' : '云端同步失败：' + e.message);
-      } finally { pushing = false; }
-    }, 900);
+  function save() {
+    try { localStorage.setItem(LS, JSON.stringify(payload())); } catch (e) { }
+  }
+  function load() {
+    try {
+      const c = JSON.parse(localStorage.getItem(LS) || 'null');
+      if (c && c.PRODUCTS) {
+        D.PRODUCTS = c.PRODUCTS; D.SUPPLIERS = c.SUPPLIERS || D.SUPPLIERS;
+        D.CUSTOMERS = c.CUSTOMERS || D.CUSTOMERS; D.sales = c.sales || D.sales;
+        D.stockFlows = c.stockFlows || D.stockFlows; D.quotes = c.quotes || D.quotes;
+        D.inquiries = c.inquiries || D.inquiries; D.initStock = c.initStock || D.initStock;
+      }
+    } catch (e) { }
+    recomputeStock();
   }
 
   function updateBadge(s) {
     const el = document.getElementById('syncBadge');
     if (!el) return;
     const map = {
-      local: ['本机存储', '#f1f5f9', '#6b7a8d'],
-      syncing: ['同步中…', '#fdf4e3', '#b07d2b'],
-      online: ['已同步云端', '#e6f4ee', '#1a7a58'],
-      offline: ['云端未连接', '#f1f5f9', '#6b7a8d'],
-      error: ['同步失败', '#fbecea', '#bf3b2b'],
-      conflict: ['数据有冲突', '#fbecea', '#bf3b2b'],
-      unauth: ['登录已过期', '#fbecea', '#bf3b2b']
+      local: ['本机演示', '#f1f5f9', '#6b7a8d'],
+      syncing: ['写入中…', '#fdf4e3', '#b07d2b'],
+      online: ['已连接云端', '#e6f4ee', '#1a7a58'],
+      offline: ['未登录', '#f1f5f9', '#6b7a8d'],
+      error: ['云端异常', '#fbecea', '#bf3b2b']
     };
     const m = map[s] || map.local;
     el.textContent = m[0];
@@ -102,20 +97,19 @@ const App = (function () {
     el.style.color = m[2];
   }
 
-  function reset() {
-    localStorage.removeItem(LS); location.reload();
-  }
+  function reset() { localStorage.removeItem(LS); location.reload(); }
 
-  /* 由期初 + 流水重算库存与加权成本（保证任何新增记录后账实一致） */
   function recomputeStock() {
     const st = {};
-    D.PRODUCTS.forEach(p => { st[p.id] = { qty: D.initStock[p.id].qty, cost: D.initStock[p.id].cost }; });
+    D.PRODUCTS.forEach(p => {
+      const b = D.initStock[p.id] || { qty: 0, cost: 0 };
+      st[p.id] = { qty: Number(b.qty) || 0, cost: Number(b.cost) || 0 };
+    });
     D.stockFlows.slice().sort((a, b) => (a.date === b.date ? (a.id < b.id ? -1 : 1) : (a.date < b.date ? -1 : 1))).forEach(f => {
-      const s = st[f.pid]; if (!s) return;
-      if (f.type === '入库') {
-        s.cost = (s.qty * s.cost + f.qty * f.price) / Math.max(1, s.qty + f.qty);
-        s.qty += f.qty;
-      } else { s.qty -= f.qty; }
+      const t = st[f.pid]; if (!t) return;
+      const q = Number(f.qty) || 0, pr = Number(f.price) || 0;
+      if (f.type === '入库') { t.cost = (t.qty * t.cost + q * pr) / Math.max(1, t.qty + q); t.qty += q; }
+      else { t.qty -= q; }
     });
     D.stock = D.PRODUCTS.map(p => ({
       pid: p.id, qty: st[p.id].qty, cost: Math.round(st[p.id].cost * 100) / 100,
@@ -124,10 +118,8 @@ const App = (function () {
   }
   const stk = pid => D.stock.find(s => s.pid === pid) || { qty: 0, cost: 0, amount: 0 };
 
-  function nextId(prefix, arr) {
-    let mx = 0;
-    arr.forEach(x => { const n = parseInt(String(x.id).replace(/\D/g, ''), 10); if (n > mx) mx = n; });
-    return prefix + String(mx + 1).padStart(prefix === 'F' ? 5 : (prefix === 'S' ? 4 : 3), '0');
+  function nextId(prefix) {
+    return prefix + String(Date.now()).slice(-9) + String(Math.floor(Math.random() * 900) + 100);
   }
 
   /* ---------------- 登录 ---------------- */
@@ -138,70 +130,102 @@ const App = (function () {
     go('dash');
   }
 
-  function userFromCloud(cu) {
+  function userFromRole(name, role) {
     return {
-      id: cu.u, name: cu.name,
-      role: ROLE_LABEL[cu.role] || cu.role,
-      av: String(cu.name || '?').slice(0, 1),
-      perms: ROLE_PERMS[cu.role] || ROLE_PERMS.sales
+      id: name, name: name, roleKey: role,
+      role: ROLE_LABEL[role] || role,
+      av: String(name || '?').slice(0, 1),
+      perms: ROLE_PERMS[role] || ROLE_PERMS.sales
     };
   }
 
-  async function login() {
-    const u = (document.getElementById('lgUser').value || '').trim().toLowerCase();
-    const pwd = (document.getElementById('lgPwd').value || '');
+  let otpChallenge = null;
+  const lgErr = msg => { const el = $('#lgErr'); if (el) el.textContent = msg || ''; };
+  const clearErr = () => lgErr('');
 
-    if (Cloud.enabled()) {
-      try {
-        updateBadge('syncing');
-        const cu = await Cloud.login(u, pwd);
-        state.user = userFromCloud(cu);
-        const res = await Cloud.bootstrap();
-        const isEmpty = !res.data;
-        applyData(res.data);
-        recomputeStock();
-        if (isEmpty) {                       // 云端首次使用：把当前种子数据推上去
-          await Cloud.push(payload());
-          updateBadge('online');
-          toast('云端空库，已初始化演示数据');
-        } else {
-          updateBadge('online');
-          toast('已连接云端 · 版本 v' + res.version);
-        }
-        enterApp();
-      } catch (e) {
-        updateBadge('error');
-        toast(e.message || '登录失败');
-      }
-      return;
+  async function sendCode() {
+    if (!CLOUD_MODE) { toast('演示模式无需验证码'); return; }
+    const phone = (($('#lgPhone') || {}).value || '').trim();
+    if (!/^1\d{10}$/.test(phone)) { lgErr('请输入正确的 11 位手机号'); return; }
+    lgErr('');
+    const btn = $('#lgSend');
+    if (btn) { btn.disabled = true; btn.textContent = '发送中…'; }
+    try {
+      const d = await CLOUD.sendOtp(phone);
+      otpChallenge = { phone, verificationId: d.verificationId, isExistingUser: d.isExistingUser };
+      toast('验证码已发送');
+      let n = 60;
+      const timer = setInterval(() => {
+        if (!btn) { clearInterval(timer); return; }
+        n -= 1;
+        if (n <= 0) { clearInterval(timer); btn.disabled = false; btn.textContent = '获取验证码'; }
+        else { btn.textContent = n + ' 秒后重发'; }
+      }, 1000);
+    } catch (e) {
+      lgErr(e.message || '验证码发送失败');
+      if (btn) { btn.disabled = false; btn.textContent = '获取验证码'; }
     }
+  }
 
+  async function loginPhone() {
+    if (!CLOUD_MODE) { return loginDemo(); }
+    const phone = (($('#lgPhone') || {}).value || '').trim();
+    const code = (($('#lgCode') || {}).value || '').trim();
+    if (!/^1\d{10}$/.test(phone)) { lgErr('请输入正确的 11 位手机号'); return; }
+    if (!code) { lgErr('请输入验证码'); return; }
+    if (!otpChallenge || otpChallenge.phone !== phone) { lgErr('请先获取该手机号的验证码'); return; }
+    lgErr('');
+    updateBadge('syncing');
+    try {
+      await CLOUD.verifyOtp(phone, otpChallenge.verificationId, otpChallenge.isExistingUser, code);
+      otpChallenge = null;
+      await afterLogin();
+    } catch (e) { updateBadge('error'); lgErr(e.message || '登录失败'); }
+  }
+
+  async function loginWorkBuddy() {
+    if (!CLOUD_MODE) { toast('演示模式不支持该登录方式'); return; }
+    lgErr('');
+    try { await CLOUD.signInWithWorkBuddy(); }
+    catch (e) { lgErr(e.message || 'WorkBuddy 登录发起失败'); }
+  }
+
+  async function afterLogin() {
+    const sess = await CLOUD.getSession();
+    const u = CLOUD.sessionUser(sess);
+    const displayName = (u && (u.name || u.nickname || u.email)) || '未命名';
+    const staff = await CLOUD.ensureStaff(displayName);
+    state.user = userFromRole(staff.name || displayName, staff.role);
+    const seeded = await CLOUD.seedIfEmpty(payload());
+    applyCloud(await CLOUD.loadAll());
+    updateBadge('online');
+    enterApp();
+    toast(seeded.seeded ? '云端空库，已写入演示数据' : ('已连接云端 · 身份：' + state.user.role));
+  }
+
+  function loginDemo() {
+    const u = (($('#lgUser') || {}).value || '').trim().toLowerCase();
     if (!USERS[u]) { toast('账号不存在，请用演示账号 lily / xiaowang / caiwu'); return; }
     state.user = USERS[u];
     enterApp();
   }
 
-  function logout() {
-    if (Cloud.enabled()) Cloud.logout();
+  async function logout() {
+    if (CLOUD_MODE) await CLOUD.signOut();
     state.user = null;
     document.getElementById('app').classList.add('hidden');
     document.getElementById('login').classList.remove('hidden');
-    updateBadge(Cloud.enabled() ? 'offline' : 'local');
+    updateBadge(CLOUD_MODE ? 'offline' : 'local');
   }
 
   async function tryAutoLogin() {
-    if (!Cloud.enabled() || !Cloud.hasToken()) return;
+    if (!CLOUD_MODE) return;
     try {
-      const res = await Cloud.bootstrap();
-      state.user = userFromCloud(res.user);
-      applyData(res.data);
-      recomputeStock();
-      updateBadge('online');
-      enterApp();
+      const sess = await CLOUD.getSession();
+      if (!CLOUD.sessionUser(sess)) { updateBadge('offline'); return; }
+      await afterLogin();
       toast('已恢复上次登录');
-    } catch (e) {
-      updateBadge('offline');
-    }
+    } catch (e) { updateBadge('offline'); }
   }
 
   /* ---------------- 导航 ---------------- */
@@ -1013,7 +1037,7 @@ const App = (function () {
     if (qty > s.qty) line.innerHTML += `<span style="color:#bf3b2b">⚠ 出库量超过库存</span>`;
   }
 
-  function submitSale() {
+  async function submitSale() {
     const pid = $('#f_pid').value, cid = $('#f_cid').value;
     const qty = Number($('#f_qty').value), price = Number($('#f_price').value);
     const s = stk(pid);
@@ -1022,14 +1046,22 @@ const App = (function () {
     const date = $('#f_date').value || today();
     const ref = 'XS' + date.replace(/-/g, '') + String(D.sales.length + 1).padStart(2, '0');
     const owner = $('#f_owner').value;
-    D.sales.unshift({
-      id: nextId('S', D.sales), ref, date, pid, cid, qty, price,
+    const sale = {
+      id: nextId('S'), ref, date, pid, cid, qty, price,
       cost: s.cost, amount: Math.round(qty * price), owner, pay: $('#f_pay').value, note: ''
-    });
-    D.stockFlows.push({
-      id: nextId('F', D.stockFlows), date, pid, type: '出库', qty, price,
+    };
+    const flow = {
+      id: nextId('F'), date, pid, type: '出库', qty, price,
       partner: C(cid).name, ref, operator: owner, note: '销售出库'
-    });
+    };
+    if (CLOUD_MODE) {
+      try {
+        await CLOUD.insertRow('sales', sale);
+        await CLOUD.insertRow('stock_flows', flow);
+      } catch (e) { toast('写入云端失败：' + e.message); return; }
+    }
+    D.sales.unshift(sale);
+    D.stockFlows.push(flow);
     recomputeStock(); save(); closeModal();
     toast('已出库 ' + qty + ' 吨，库存与看板已同步');
     go(state.route);
@@ -1066,18 +1098,23 @@ const App = (function () {
       <span>本次金额 <b>${yuan(qty * price)}</b></span>`;
   }
 
-  function submitFlow(type) {
+  async function submitFlow(type) {
     const pid = $('#f_pid').value, qty = Number($('#f_qty').value), price = Number($('#f_price').value);
     if (!qty || !price) { toast('请填写数量与单价'); return; }
     const date = $('#f_date').value || today();
     const s = stk(pid);
     if (type === '出库' && qty > s.qty) { toast('库存不足'); return; }
     const partner = type === '入库' ? S($('#f_sid').value).name : ($('#f_partner').value || '其他');
-    D.stockFlows.push({
-      id: nextId('F', D.stockFlows), date, pid, type, qty, price, partner,
+    const flow = {
+      id: nextId('F'), date, pid, type, qty, price, partner,
       ref: (type === '入库' ? 'CG' : 'QT') + date.replace(/-/g, '') + String(Math.floor(Math.random() * 90) + 10),
       operator: state.user.name, note: $('#f_note') ? $('#f_note').value : ''
-    });
+    };
+    if (CLOUD_MODE) {
+      try { await CLOUD.insertRow('stock_flows', flow); }
+      catch (e) { toast('写入云端失败：' + e.message); return; }
+    }
+    D.stockFlows.push(flow);
     recomputeStock(); save(); closeModal();
     toast(type + '已登记，库存已更新');
     go(state.route);
@@ -1099,16 +1136,21 @@ const App = (function () {
       `<button class="btn ghost" onclick="App.closeModal()">取消</button>
        <button class="btn" onclick="App.submitQuote()">保存报价</button>`);
   }
-  function submitQuote() {
+  async function submitQuote() {
     const price = Number($('#f_price').value);
     if (!price) { toast('请填写报价'); return; }
     const date = $('#f_date').value || today();
-    D.quotes.unshift({
-      id: nextId('Q', D.quotes), date, sid: $('#f_sid').value, pid: $('#f_pid').value,
+    const q = {
+      id: nextId('Q'), date, sid: $('#f_sid').value, pid: $('#f_pid').value,
       price, moq: Number($('#f_moq').value) || 10,
       validUntil: $('#f_valid').value || '', source: $('#f_source').value, status: '有效',
       note: $('#f_note').value || ''
-    });
+    };
+    if (CLOUD_MODE) {
+      try { await CLOUD.insertRow('quotes', q); }
+      catch (e) { toast('写入云端失败：' + e.message); return; }
+    }
+    D.quotes.unshift(q);
     save(); closeModal(); toast('报价已记录'); go(state.route);
   }
 
@@ -1148,15 +1190,20 @@ const App = (function () {
     const line = $('#calcLine');
     if (line) line.innerHTML = `<span>成本 ${yuan(s.cost)}/吨</span><span>建议区间 <b>${yuan(s.cost * 1.2)} ~ ${yuan(s.cost * 1.3)}</b></span>`;
   }
-  function submitInquiry() {
+  async function submitInquiry() {
     const qty = Number($('#f_qty').value), price = Number($('#f_price').value);
     if (!qty || !price) { toast('请填写数量与报价'); return; }
-    D.inquiries.unshift({
-      id: nextId('I', D.inquiries), date: $('#f_date').value || today(),
+    const rec = {
+      id: nextId('I'), date: $('#f_date').value || today(),
       cid: $('#f_cid').value, pid: $('#f_pid').value, qty, ourPrice: price,
       result: $('#f_result').value, followUp: $('#f_follow').value || '',
       owner: state.user.name, note: $('#f_note').value || ''
-    });
+    };
+    if (CLOUD_MODE) {
+      try { await CLOUD.insertRow('inquiries', rec); }
+      catch (e) { toast('写入云端失败：' + e.message); return; }
+    }
+    D.inquiries.unshift(rec);
     save(); closeModal(); toast('询价已记录，到期会提醒跟进'); go(state.route);
   }
 
@@ -1174,14 +1221,18 @@ const App = (function () {
       `<button class="btn ghost" onclick="App.closeModal()">取消</button>
        <button class="btn" onclick="App.submitCustomer()">保存</button>`);
   }
-  function submitCustomer() {
+  async function submitCustomer() {
     const name = $('#f_name').value.trim();
     if (!name) { toast('请填写客户名称'); return; }
-    const id = 'C' + String(D.CUSTOMERS.length + 1).padStart(2, '0');
-    D.CUSTOMERS.push({
-      id, name, contact: $('#f_contact').value, phone: $('#f_phone').value,
+    const c = {
+      id: nextId('C'), name, contact: $('#f_contact').value, phone: $('#f_phone').value,
       city: $('#f_city').value, level: $('#f_level').value, need: $('#f_need').value, note: $('#f_note').value
-    });
+    };
+    if (CLOUD_MODE) {
+      try { await CLOUD.insertRow('customers', c); }
+      catch (e) { toast('写入云端失败：' + e.message); return; }
+    }
+    D.CUSTOMERS.push(c);
     save(); closeModal(); toast('客户已新增'); go(state.route);
   }
 
@@ -1214,20 +1265,38 @@ const App = (function () {
   /* ---------------- 初始化 ---------------- */
   function init() {
     load();
-    if (Cloud.enabled()) {
+    const boxCloud = document.getElementById('cloudLogin');
+    const boxDemo = document.getElementById('demoLogin');
+    if (CLOUD_MODE) {
       updateBadge('offline');
-      const tip = document.getElementById('cloudTip');
-      if (tip) tip.classList.remove('hidden');
+      if (boxCloud) boxCloud.classList.remove('hidden');
+      if (boxDemo) boxDemo.classList.add('hidden');
     } else {
       updateBadge('local');
+      if (boxCloud) boxCloud.classList.add('hidden');
+      if (boxDemo) boxDemo.classList.remove('hidden');
     }
     document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
-    document.addEventListener('cloud:status', e => updateBadge(e.detail));
+    bootAuth();
+  }
+
+  async function bootAuth() {
+    if (!CLOUD_MODE) return;
+    try {
+      const r = await CLOUD.handleOAuthCallback();
+      if (r.handled) {
+        if (r.error) { lgErr(r.error.message); updateBadge('offline'); return; }
+        await afterLogin();
+        toast('登录成功');
+        return;
+      }
+    } catch (e) { lgErr(e.message || '授权回调处理失败'); }
     tryAutoLogin();
   }
 
   return {
-    init, login, logout, go, reset,
+    init, logout, go, reset, loginDemo,
+    sendCode, loginPhone, loginWorkBuddy, clearErr,
     doPrice, globalSearch, priceResult,
     fStock, fStockCat, fSale, fSaleDays, fCust, fInq, pickPur,
     custDetail, openModal, closeModal,

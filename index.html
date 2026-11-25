@@ -23,28 +23,59 @@
     </div>
     <div class="login-form">
       <h2>登录</h2>
-      <div class="sub">演示环境：下方任选一个身份直接进入</div>
-      <div class="notice brand hidden" id="cloudTip" style="margin-bottom:14px">☁ 已接入云端，请使用服务器分配的账号密码登录</div>
-      <div class="field">
-        <label>账号</label>
-        <input id="lgUser" value="lily" autocomplete="off">
+      <div class="sub" id="lgSub">库存 · 销售 · 采购价，实时同步到云端</div>
+
+      <!-- 云端登录：手机号验证码 / WorkBuddy 账号 -->
+      <div id="cloudLogin" class="hidden">
+        <div class="field">
+          <label>手机号</label>
+          <input id="lgPhone" inputmode="numeric" autocomplete="tel" placeholder="11 位手机号" oninput="App.clearErr()">
+        </div>
+        <div class="field">
+          <label>验证码</label>
+          <div class="row2">
+            <input id="lgCode" inputmode="numeric" autocomplete="one-time-code" placeholder="短信验证码">
+            <button type="button" class="btn ghost" id="lgSend" onclick="App.sendCode()">获取验证码</button>
+          </div>
+        </div>
+        <div class="err" id="lgErr"></div>
+        <button class="btn block" onclick="App.loginPhone()">登 录 / 注 册</button>
+        <div class="or-line"><span>或</span></div>
+        <button class="btn ghost block" onclick="App.loginWorkBuddy()">使用 WorkBuddy 登录</button>
+        <div class="role-hint">
+          首次登录自动建档：第一个登录的人是<b>老板</b>，之后加入的是<b>业务员</b>。<br>
+          数据实时写入云端，换设备、换手机都能看到同一份账。
+        </div>
+        <div class="or-line"><span>只是看看</span></div>
+        <button class="btn ghost block" onclick="App.loginDemo()">免登录，直接看样板数据</button>
+        <div class="role-hint">
+          样板数据为演示用途，存在本机浏览器，不会写入云端。
+        </div>
       </div>
-      <div class="field">
-        <label>密码</label>
-        <input id="lgPwd" type="password" value="123456">
-      </div>
-      <button class="btn block" onclick="App.login()">登 录</button>
-      <div class="field" style="margin-top:16px">
-        <label>快速切换身份</label>
-        <select id="lgQuick" onchange="document.getElementById('lgUser').value=this.value">
-          <option value="lily">Lily（老板 · 全部权限）</option>
-          <option value="xiaowang">王子涵（业务 · 不见销售价与毛利）</option>
-          <option value="caiwu">财务（成本毛利 · 只读）</option>
-        </select>
-      </div>
-      <div class="role-hint">
-        演示账号：<code>lily</code> / <code>xiaowang</code> / <code>caiwu</code>，密码均为 <code>123456</code><br>
-        数据为按材料贸易结构生成的演示数据，接真实数据前不影响判断。
+
+      <!-- 本机演示：不连云端，数据只在这台电脑的浏览器里 -->
+      <div id="demoLogin">
+        <div class="notice brand" style="margin-bottom:14px">演示模式：数据只存本机浏览器，不写入云端</div>
+        <div class="field">
+          <label>账号</label>
+          <input id="lgUser" value="lily" autocomplete="off">
+        </div>
+        <div class="field">
+          <label>密码</label>
+          <input id="lgPwd" type="password" value="123456">
+        </div>
+        <button class="btn block" onclick="App.loginDemo()">登 录</button>
+        <div class="field" style="margin-top:16px">
+          <label>快速切换身份</label>
+          <select id="lgQuick" onchange="document.getElementById('lgUser').value=this.value">
+            <option value="lily">Lily（老板 · 全部权限）</option>
+            <option value="xiaowang">王子涵（业务 · 不见销售价与毛利）</option>
+            <option value="caiwu">财务（成本毛利 · 只读）</option>
+          </select>
+        </div>
+        <div class="role-hint">
+          演示账号：<code>lily</code> / <code>xiaowang</code> / <code>caiwu</code>，密码均为 <code>123456</code>
+        </div>
       </div>
     </div>
   </div>
@@ -76,9 +107,10 @@
 <div id="modalRoot"></div>
 <div id="toast"></div>
 
+<script src="vendor/cloud-sdk.js"></script>
 <script src="config.js"></script>
 <script src="data.js"></script>
-<script src="cloud.js"></script>
+<script src="cloudstore.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

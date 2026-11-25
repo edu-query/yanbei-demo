@@ -1,13 +1,10 @@
 /* ============================================================
-   部署配置（改这一个文件就能切换 本机 / 云端）
+   发布配置（给客户看的样板）
    ------------------------------------------------------------
-   演示 / 离线试用：保持 null —— 数据存浏览器本机
-       window.WB_CLOUD = null;
-
-   页面和接口同一台服务器（server/server.js 托管本目录）：
-       window.WB_CLOUD = { apiBase: "" };
-
-   页面在 GitHub Pages / 其他静态托管，接口在自己的服务器：
-       window.WB_CLOUD = { apiBase: "https://api.你的域名.com" };
+   演示模式：不连云端，数据只存在打开页面的那台设备的浏览器里。
+   切换云端：把下面整个对象替换为云端配置（endpoint / publishableKey /
+   oauthRelayBaseUrl）即可，业务代码无需改动。
    ============================================================ */
-window.WB_CLOUD = null;
+window.WB_CLOUD_CONFIG = {
+  mode: 'local'
+};

@@ -251,3 +251,18 @@ td.c, th.c { text-align: center; }
   white-space: nowrap; transition: .2s; border: 1px solid transparent;
 }
 @media (max-width: 900px) { .sync-badge { display: none; } }
+
+/* 云端登录表单 */
+.row2 { display: flex; gap: 8px; align-items: stretch; }
+.row2 input { flex: 1; min-width: 0; }
+.row2 .btn { white-space: nowrap; }
+.row2 .btn[disabled] { opacity: .55; cursor: not-allowed; }
+.err { color: #bf3b2b; font-size: 12.5px; min-height: 18px; margin: -4px 0 8px; }
+.err:empty { min-height: 0; margin: 0; }
+.or-line {
+  display: flex; align-items: center; gap: 10px; color: #a3b0c2;
+  font-size: 12px; margin: 16px 0;
+}
+.or-line::before, .or-line::after {
+  content: ''; flex: 1; height: 1px; background: #e6ebf2;
+}
